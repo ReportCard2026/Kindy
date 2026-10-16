@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ontario Kindergarten Communication of Learning Generator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --ontario-blue: #00519B; }
+  body { background: #f3f4f6; font-family: system-ui, sans-serif; }
+  .btn-primary { background: var(--ontario-blue); color: white; }
+  .btn-primary:hover { background: #004080; }
+  .strand-card { border-left: 4px solid var(--ontario-blue); }
+  .skeleton { background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .comment-box { white-space: pre-wrap; font-size: 0.9rem; line-height: 1.6; }
+  #toast { transition: opacity 0.3s; }
+  .progress-bar { transition: width 0.4s ease; }
+  textarea:focus { outline: 2px solid var(--ontario-blue); }
+</style>
+</head>
+<body class="min-h-screen pb-16">
+
+<!-- Header -->
+<div style="background:#00519B" class="text-white py-5 px-4 shadow-lg">
+  <div class="max-w-4xl mx-auto flex items-center gap-3">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight">🎒 Kindergarten Communication of Learning</h1>
+      <p class="text-blue-200 text-sm mt-0.5">Ontario Curriculum — JK / SK Narrative Comment Generator</p>
+    </div>
+  </div>
+</div>
+
+<!-- API Key Banner -->
+<div id="apiBanner" class="bg-yellow-50 border-b border-yellow-200 py-3 px-4">
+  <div class="max-w-4xl mx-auto flex flex-wrap items-center gap-3">
+    <span class="text-yellow-800 font-medium text-sm">🔑 Anthropic API Key required</span>
+    <input id="apiKeyInput" type="password" placeholder="sk-ant-..."
+      class="flex-1 min-w-48 border border-yellow-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 bg-white"/>
+    <button onclick="saveKey()" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-1.5 rounded text-sm font-medium">Save Key</button>
+    <span id="keyStatus" class="text-sm hidden"></span>
+  </div>
+</div>
+
+<!-- Main Content -->
+<div class="max-w-4xl mx-auto px-4 mt-6">
+
+  <!-- Controls Row -->
+  <div class="bg-white rounded-xl shadow p-5 mb-6">
+    <div class="flex flex-wrap gap-6 items-center">
+
+      <!-- Year Selector -->
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Year</label>
+        <div class="flex gap-2">
+          <button id="btnJK" onclick="setYear('JK')"
+            class="px-5 py-2 rounded-lg font-semibold border-2 border-blue-700 text-blue-700 bg-blue-50 text-sm">
+            JK — Year 1
+          </button>
+          <button id="btnSK" onclick="setYear('SK')"
+            class="px-5 py-2 rounded-lg font-semibold border-2 border-gray-200 text-gray-500 bg-white text-sm">
+            SK — Year 2
+          </button>
+        </div>
+      </div>
+
+      <!-- Name Toggle -->
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Student Name</label>
+        <div class="flex items-center gap-2">
+          <button id="nameToggleBtn" onclick="toggleName()"
+            class="relative inline-flex h-6 w-11 items-center rounded-full bg-blue-600 transition-colors">
+            <span id="nameToggleDot" class="inline-block h-4 w-4 translate-x-6 transform rounded-full bg-white transition-transform"></span>
+          </button>
+          <span id="nameToggleLabel" class="text-sm text-gray-600">Insert {Name} &amp; pronouns</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Strand Cards -->
+  <div id="strandsContainer" class="space-y-4 mb-6"></div>
+
+  <!-- Generate Button -->
+  <div class="text-center mb-6">
+    <button onclick="generateAll()" id="generateBtn"
+      class="btn-primary px-10 py-3 rounded-xl text-lg font-bold shadow-lg hover:shadow-xl transition-all">
+      ✨ Generate Comments
+    </button>
+    <p class="text-gray-400 text-xs mt-2">Only strands with jot notes will be generated</p>
+  </div>
+
+  <!-- Progress Bar -->
+  <div id="progressArea" class="hidden mb-6">
+    <div class="bg-gray-200 rounded-full h-2">
+      <div id="progressBar" class="bg-blue-600 h-2 rounded-full progress-bar" style="width:0%"></div>
+    </div>
+    <p id="progressLabel" class="text-center text-sm text-gray-500 mt-2">Generating…</p>
+  </div>
+
+  <!-- Results -->
+  <div id="resultsSection" class="hidden mb-8">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-xl font-bold text-gray-800">Generated Comments</h2>
+      <button onclick="copyAll()" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium">📋 Copy All Comments</button>
+    </div>
+    <div id="resultsContainer" class="space-y-4"></div>
+  </div>
+
+  <!-- Footer -->
+  <p class="text-center text-xs text-gray-400 mt-4 pb-4">
+    Comments are generated as a starting point. Always review and personalize before submitting. · William C. Winegard PS, UGDSB
+  </p>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-6 right-6 bg-gray-800 text-white px-4 py-2 rounded-lg text-sm shadow-lg opacity-0 pointer-events-none z-50"></div>
+
+<script>
+// ─────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────
+let apiKey = '';
+let currentYear = 'JK';
+let nameEnabled = true;
+let savedNotes = {};
+
+// ─────────────────────────────────────────────────────────────
+// STRANDS
+// ─────────────────────────────────────────────────────────────
+const STRANDS = [
+  {
+    id: 'foundations',
+    label: 'Foundations of Language and Mathematics',
+    letter: 'A',
+    colour: '#2563eb',
+    expectations: {
+      JK: [
+        'Recognizes and names some letters, especially in own name',
+        'Develops phonological awareness (rhyme, syllables, initial sounds)',
+        'Counts objects to 10 with one-to-one correspondence',
+        'Sorts and classifies objects by colour, shape, and size',
+        'Engages with books and begins to understand that print carries meaning'
+      ],
+      SK: [
+        'Reads and writes simple words using phonics knowledge',
+        'Retells stories with a beginning, middle, and end',
+        'Counts, compares, and orders numbers to 20; skip-counts by 2s and 5s',
+        'Adds and subtracts small quantities using objects, fingers, or drawings',
+        'Writes simple sentences using spacing, capital letters, and end punctuation'
+      ]
+    },
+    examples: {
+      JK: 'Recognizes letters in own name, starting to clap syllables in words, loves being read to, points to words left to right, counts objects to 10 with one-to-one correspondence, sorts buttons by colour and size, notices the AB pattern on the carpet',
+      SK: 'Reads simple 3-letter words (cat, dog, sun), writes own name and 8–10 sight words independently, retells stories with clear beginning/middle/end, skip-counts by 2s to 20, adds small groups of objects using fingers or counters, writes simple sentences with spaces between words'
+    }
+  },
+  {
+    id: 'problem_solving',
+    label: 'Problem Solving and Innovating',
+    letter: 'B',
+    colour: '#7c3aed',
+    expectations: {
+      JK: [
+        'Explores materials through hands-on play and sensory investigation',
+        'Tries different approaches when something doesn\'t work',
+        'Asks simple questions about the world ("why?" and "what if?")',
+        'Communicates ideas through drawing, building, and dramatic play',
+        'Begins to notice cause and effect in everyday situations'
+      ],
+      SK: [
+        'Plans and tests solutions with increasing intentionality',
+        'Makes predictions and reflects on whether they were right',
+        'Uses drawings, labels, and words to document thinking and discoveries',
+        'Applies STEM skills: observing, questioning, predicting, testing, revising',
+        'Explains reasoning to peers and makes connections to real-world contexts'
+      ]
+    },
+    examples: {
+      JK: 'Stacks blocks and knocks them down to see what happens, splashes at the water table to explore what sinks and floats, tries a new way when first attempt doesn\'t work, says "watch this!" before trying something, curious about worms and puddles outside, loves play dough and loose parts',
+      SK: 'Drew a diagram before building a bridge at the maker space, tested three different ramp angles to see which made the car go fastest, said "I think it will fall because the base is too small" — was right!, explains thinking to a partner using "because", connects science observations to things at home'
+    }
+  },
+  {
+    id: 'self_regulation',
+    label: 'Self-Regulation and Well-Being',
+    letter: 'C',
+    colour: '#059669',
+    expectations: {
+      JK: [
+        'Begins to identify and name basic emotions (happy, sad, mad, scared)',
+        'Uses adult support to navigate big feelings and transitions',
+        'Develops stamina for independent play and group activities',
+        'Participates in active play and begins to develop gross motor skills',
+        'Shows early awareness of personal needs (hungry, tired, needs a break)'
+      ],
+      SK: [
+        'Identifies a range of emotions and begins to understand triggers',
+        'Selects and uses self-regulation strategies with growing independence',
+        'Demonstrates persistence on challenging tasks without adult prompting',
+        'Reflects on personal strengths and sets simple learning goals',
+        'Develops physical literacy through active outdoor play and movement challenges'
+      ]
+    },
+    examples: {
+      JK: 'Still learning to wait for a turn — needs reminders but trying, cries sometimes at drop-off but settles within 5 min, names feelings when asked (mad, sad, happy), loves running at recess, needs adult support to use calm corner, beginning to notice when body feels "too big"',
+      SK: 'Goes to calm corner on own before getting overwhelmed, said "I need a minute" when frustrated — huge growth!, sets a goal at morning meeting and checks in at end of day, bounces back from mistakes without big reaction, teaches younger students breathing strategies, reflects on what strategies worked for them'
+    }
+  },
+  {
+    id: 'belonging',
+    label: 'Belonging and Contributing',
+    letter: 'D',
+    colour: '#d97706',
+    expectations: {
+      JK: [
+        'Develops a sense of self and begins to feel safe in the classroom community',
+        'Engages in parallel and early cooperative play with peers',
+        'Follows simple classroom routines and expectations with support',
+        'Begins to show care for others (sharing, helping, noticing feelings)',
+        'Explores stories and materials that reflect diverse families and communities'
+      ],
+      SK: [
+        'Demonstrates a strong sense of identity and belonging in the school community',
+        'Collaborates with peers, negotiates roles, and resolves conflicts with words',
+        'Takes initiative in classroom routines and leadership opportunities',
+        'Shows empathy and advocates for fairness and inclusion',
+        'Engages thoughtfully with diverse perspectives, cultures, and experiences'
+      ]
+    },
+    examples: {
+      JK: 'Waves and says hi to friends at the door, plays beside others (parallel play mostly), sometimes joins group play when invited, upset when someone takes their spot, loves being the "helper", learning that others have feelings too, participates in circle with reminders to take turns',
+      SK: 'Organized a game at recess and made sure everyone had a role, used words to solve disagreement over the paint brushes ("let\'s take turns — you go first"), checks on a friend who looked sad, leads the morning routine for younger JK students, contributes confidently during class discussions, knows and uses everyone\'s name'
+    }
+  }
+];
+
+// ─────────────────────────────────────────────────────────────
+// PLACEHOLDERS
+// ─────────────────────────────────────────────────────────────
+const PLACEHOLDERS = {
+  JK: {
+    foundations: 'e.g., "Loves books, can clap syllables, recognizes own name in print, counting to 10, sorts by colour and size, interested in patterns on the carpet…"',
+    problem_solving: 'e.g., "Builds with blocks and talks through designs, tries different ways to make a tower stay up, asks \"what if\" questions at the water table…"',
+    self_regulation: 'e.g., "Uses the calm corner when frustrated, getting better at waiting for a turn, names feelings (happy, sad, mad), enjoys outdoor active play…"',
+    belonging: 'e.g., "Greets classmates by name, includes others in dramatic play, starting to share materials, loves our morning circle routines…"'
+  },
+  SK: {
+    foundations: 'e.g., "Reads simple CVC words, writes own name and some sight words, skip-counts by 2s, adds small groups of objects, composes/decomposes numbers to 10…"',
+    problem_solving: 'e.g., "Designed a ramp for the marble run with trial and error, uses labelled diagrams to show thinking, asks \"why does that happen\" questions in science…"',
+    self_regulation: 'e.g., "Uses breathing strategies independently, sets own learning goals, shows persistence on challenging puzzles, advocates for own needs politely…"',
+    belonging: 'e.g., "Takes on leadership roles in group play, resolves small conflicts with words, celebrates classmates\' successes, participates in classroom jobs proudly…"'
+  }
+};
+
+// ─────────────────────────────────────────────────────────────
+// API KEY
+// ─────────────────────────────────────────────────────────────
+function saveKey() {
+  const v = document.getElementById('apiKeyInput').value.trim();
+  if (!v.startsWith('sk-ant-')) { showToast('⚠️ Key should start with sk-ant-'); return; }
+  apiKey = v;
+  document.getElementById('keyStatus').textContent = '✅ Key saved';
+  document.getElementById('keyStatus').className = 'text-sm text-green-700';
+  document.getElementById('keyStatus').classList.remove('hidden');
+  document.getElementById('apiKeyInput').value = '••••••••••••';
+  showToast('API key saved!');
+}
+
+// ─────────────────────────────────────────────────────────────
+// YEAR TOGGLE
+// ─────────────────────────────────────────────────────────────
+function setYear(year) {
+  saveCurrentNotes();
+  currentYear = year;
+  document.getElementById('btnJK').className = year === 'JK'
+    ? 'px-5 py-2 rounded-lg font-semibold border-2 border-blue-700 text-blue-700 bg-blue-50 text-sm'
+    : 'px-5 py-2 rounded-lg font-semibold border-2 border-gray-200 text-gray-500 bg-white text-sm';
+  document.getElementById('btnSK').className = year === 'SK'
+    ? 'px-5 py-2 rounded-lg font-semibold border-2 border-blue-700 text-blue-700 bg-blue-50 text-sm'
+    : 'px-5 py-2 rounded-lg font-semibold border-2 border-gray-200 text-gray-500 bg-white text-sm';
+  renderStrands();
+}
+
+// ─────────────────────────────────────────────────────────────
+// NAME TOGGLE
+// ─────────────────────────────────────────────────────────────
+function toggleName() {
+  nameEnabled = !nameEnabled;
+  document.getElementById('nameToggleBtn').className = nameEnabled
+    ? 'relative inline-flex h-6 w-11 items-center rounded-full bg-blue-600 transition-colors'
+    : 'relative inline-flex h-6 w-11 items-center rounded-full bg-gray-300 transition-colors';
+  document.getElementById('nameToggleDot').className = nameEnabled
+    ? 'inline-block h-4 w-4 translate-x-6 transform rounded-full bg-white transition-transform'
+    : 'inline-block h-4 w-4 translate-x-1 transform rounded-full bg-white transition-transform';
+  document.getElementById('nameToggleLabel').textContent = nameEnabled ? 'Insert {Name} & pronouns' : 'Name & pronouns off';
+}
+
+// ─────────────────────────────────────────────────────────────
+// RENDER STRANDS
+// ─────────────────────────────────────────────────────────────
+function useExample(id) {
+  const s = STRANDS.find(x => x.id === id);
+  const ta = document.getElementById('notes_' + id);
+  if (ta && s.examples) {
+    ta.value = s.examples[currentYear];
+    ta.focus();
+    const hint = document.getElementById('exampleHint_' + id);
+    if (hint) { hint.style.display = 'block'; }
+    showToast('Example loaded — customize and generate!');
+  }
+}
+
+function saveCurrentNotes() {
+  STRANDS.forEach(s => {
+    const ta = document.getElementById('notes_' + s.id);
+    if (ta) savedNotes[s.id] = ta.value;
+  });
+}
+
+function renderStrands() {
+  const container = document.getElementById('strandsContainer');
+  container.innerHTML = '';
+  STRANDS.forEach(s => {
+    const note = savedNotes[s.id] || '';
+    const placeholder = PLACEHOLDERS[currentYear][s.id];
+    const div = document.createElement('div');
+    div.className = 'bg-white rounded-xl shadow p-5 strand-card';
+    div.style.borderLeftColor = s.colour;
+    div.innerHTML = `
+      <div class="flex items-start gap-3 mb-3">
+        <span class="inline-flex items-center justify-center w-8 h-8 rounded-full text-white font-bold text-sm flex-shrink-0" style="background:${s.colour}">${s.letter}</span>
+        <div>
+          <h3 class="font-bold text-gray-800 text-base">${s.label}</h3>
+          <p class="text-xs text-gray-400 mt-0.5">Curriculum strand — ${currentYear === 'JK' ? 'Junior Kindergarten (Year 1)' : 'Senior Kindergarten (Year 2)'}</p>
+        </div>
+      </div>
+      <div class="bg-gray-50 rounded-lg p-3 mb-3">
+        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Key Expectations</p>
+        <ul class="text-xs text-gray-600 space-y-0.5">
+          ${(Array.isArray(s.expectations) ? s.expectations : s.expectations[currentYear]).map(e => `<li>• ${e}</li>`).join('')}
+        </ul>
+      </div>
+      <div class="flex items-center justify-between mb-1">
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Jot your notes here</label>
+        <button onclick="useExample('${s.id}')"
+          class="text-xs px-2.5 py-1 rounded-md border font-medium transition-colors"
+          style="border-color:${s.colour}; color:${s.colour};"
+          onmouseover="this.style.background='${s.colour}';this.style.color='white'"
+          onmouseout="this.style.background='transparent';this.style.color='${s.colour}'">
+          💡 Use Example
+        </button>
+      </div>
+      <textarea id="notes_${s.id}" rows="3"
+        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-y focus:border-blue-400"
+        placeholder="${placeholder}">${note}</textarea>
+      <p class="text-xs text-gray-400 mt-1 italic" id="exampleHint_${s.id}" style="display:none">✏️ Example loaded — edit to match your student, then Generate!</p>
+    `;
+    container.appendChild(div);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// API CALL
+// ─────────────────────────────────────────────────────────────
+async function callAPI(prompt) {
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-opus-4-6',
+      max_tokens: 4096,
+      system: `You are an expert Ontario Kindergarten report card writer with deep knowledge of the 2016 Ontario Kindergarten Program (revised 2023) and the updated 2026 curriculum expectations. You write warm, strengths-based point-form comments for the Communication of Learning report card (Term 1 and Term 2).
+
+Each comment has three sections:
+1. KEY LEARNING: 4 point-form observations of what the child currently knows and can do, each tied to a specific curriculum expectation. Each point starts with a dash and a strong present-tense verb.
+2. GROWTH IN LEARNING: 2 point-form observations showing progress or growth since the start of the year. Each point starts with a dash.
+3. NEXT STEPS IN LEARNING: 2 point-form next steps, each framed positively and specifically. Each starts with "Next Step:".
+
+Rules:
+- Never use deficit language
+- Begin each point with {Name} if name is enabled, otherwise begin with the verb
+- Use {he/she/they} for subject pronouns, {his/her/their} for possessive pronouns, and {him/her/them} for object pronouns — always with curly brackets exactly as shown
+- Keep each point to one clear, specific line
+- Tie observations directly to curriculum expectations for the year level
+
+Format EXACTLY like this:
+
+===STRAND: [strand name]===
+KEY LEARNING:
+– [point 1]
+– [point 2]
+– [point 3]
+– [point 4]
+GROWTH IN LEARNING:
+– [growth point 1]
+– [growth point 2]
+NEXT STEPS IN LEARNING:
+Next Step: [next step 1]
+Next Step: [next step 2]
+===END===`,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: { message: 'Unknown error' } }));
+    throw new Error(err.error?.message || `HTTP ${resp.status}`);
+  }
+  const data = await resp.json();
+  return data.content[0].text;
+}
+
+// ─────────────────────────────────────────────────────────────
+// GENERATE ALL
+// ─────────────────────────────────────────────────────────────
+async function generateAll() {
+  if (!apiKey) { showToast('⚠️ Please enter your API key first'); return; }
+
+  saveCurrentNotes();
+
+  const activeStrands = STRANDS.filter(s => (savedNotes[s.id] || '').trim());
+  if (!activeStrands.length) { showToast('Please add notes to at least one strand'); return; }
+
+  document.getElementById('progressArea').classList.remove('hidden');
+  document.getElementById('resultsSection').classList.add('hidden');
+  document.getElementById('generateBtn').disabled = true;
+  document.getElementById('generateBtn').textContent = '⏳ Generating…';
+
+  const resultsMap = {};
+  const total = activeStrands.length;
+
+  for (let i = 0; i < activeStrands.length; i++) {
+    const s = activeStrands[i];
+    setProgress(Math.round((i / total) * 100), `Generating: ${s.label}…`);
+    try {
+      const prompt = buildPrompt(s);
+      const raw = await callAPI(prompt);
+      const parsed = parseComment(raw, s);
+      resultsMap[s.id] = { ...s, ...parsed, error: null };
+    } catch (e) {
+      resultsMap[s.id] = { ...s, error: e.message };
+    }
+  }
+
+  setProgress(100, 'Done!');
+  setTimeout(() => document.getElementById('progressArea').classList.add('hidden'), 800);
+
+  renderResults(resultsMap, activeStrands);
+  document.getElementById('generateBtn').disabled = false;
+  document.getElementById('generateBtn').textContent = '✨ Generate Comments';
+}
+
+// ─────────────────────────────────────────────────────────────
+// BUILD PROMPT
+// ─────────────────────────────────────────────────────────────
+function buildPrompt(strand) {
+  const namePrefix = nameEnabled ? '{Name}' : 'the child';
+  const notes = savedNotes[strand.id] || '';
+  const expectations = Array.isArray(strand.expectations) ? strand.expectations : strand.expectations[currentYear];
+  return `Please generate a Kindergarten Communication of Learning comment for the following strand.
+
+Year: ${currentYear === 'JK' ? 'Junior Kindergarten (Year 1)' : 'Senior Kindergarten (Year 2)'}
+Strand: ${strand.label}
+Key Curriculum Expectations for this strand:
+${expectations.map(e => '• ' + e).join('\n')}
+
+Teacher's Observations / Jot Notes:
+${notes}
+
+Student reference: Use "${namePrefix}" when referring to the student. Use {he/she/they}, {his/her/their}, and {him/her/them} for all pronouns — always with curly brackets.
+
+Generate the comment following the exact format specified in your instructions. The comment should be warm, specific, curriculum-aligned, and developmentally appropriate for ${currentYear === 'JK' ? 'Junior Kindergarten (Year 1)' : 'Senior Kindergarten (Year 2)'}.`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// PARSE COMMENT
+// ─────────────────────────────────────────────────────────────
+function parseComment(raw, strand) {
+  const block = raw.match(/===STRAND:.*?===([\s\S]*?)===END===/);
+  const content = block ? block[1] : raw;
+
+  const keyMatch = content.match(/KEY LEARNING:\s*([\s\S]*?)(?=GROWTH IN LEARNING:|$)/);
+  const growthMatch = content.match(/GROWTH IN LEARNING:\s*([\s\S]*?)(?=NEXT STEPS IN LEARNING:|$)/);
+  const nextMatch = content.match(/NEXT STEPS IN LEARNING:\s*([\s\S]*?)$/);
+
+  const parseLines = (text) => (text || '').split('\n')
+    .map(l => l.trim())
+    .filter(l => l.startsWith('–') || l.startsWith('-') || l.startsWith('Next Step:'));
+
+  return {
+    keyLearning: parseLines(keyMatch ? keyMatch[1] : ''),
+    growthInLearning: parseLines(growthMatch ? growthMatch[1] : ''),
+    nextSteps: parseLines(nextMatch ? nextMatch[1] : '')
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// RENDER RESULTS
+// ─────────────────────────────────────────────────────────────
+function renderResults(resultsMap, activeStrands) {
+  const container = document.getElementById('resultsContainer');
+  container.innerHTML = '';
+
+  activeStrands.forEach(s => {
+    const r = resultsMap[s.id];
+    const card = document.createElement('div');
+    card.id = 'result_' + s.id;
+    card.className = 'bg-white rounded-xl shadow p-5 strand-card';
+    card.style.borderLeftColor = s.colour;
+
+    if (r.error) {
+      card.innerHTML = `
+        <div class="flex items-center gap-2 mb-2">
+          <span class="inline-flex items-center justify-center w-8 h-8 rounded-full text-white font-bold text-sm flex-shrink-0" style="background:${s.colour}">${s.letter}</span>
+          <h3 class="font-bold text-gray-800">${s.label}</h3>
+        </div>
+        <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+          ⚠️ Error: ${r.error}
+          <button onclick="regenerateOne('${s.id}')" class="ml-3 underline text-red-600">Retry</button>
+        </div>`;
+    } else {
+      const fullText = `${s.label}\n\nKEY LEARNING:\n${r.keyLearning.join('\n')}\n\nGROWTH IN LEARNING:\n${r.growthInLearning.join('\n')}\n\nNEXT STEPS IN LEARNING:\n${r.nextSteps.join('\n')}`;
+      const renderLines = (lines, colour) => lines.length
+        ? lines.map(l => `<li class="flex gap-2 text-sm text-gray-700"><span style="color:${colour}" class="font-bold flex-shrink-0">${l.startsWith('Next Step:') ? '→' : '–'}</span><span>${l.replace(/^–\s*|^-\s*|^Next Step:\s*/,'')}</span></li>`).join('')
+        : '<li class="text-sm text-gray-400 italic">No content generated</li>';
+      card.innerHTML = `
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center justify-center w-8 h-8 rounded-full text-white font-bold text-sm flex-shrink-0" style="background:${s.colour}">${s.letter}</span>
+            <h3 class="font-bold text-gray-800">${s.label}</h3>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="copyCard('${s.id}')" class="text-xs px-3 py-1 border border-gray-200 rounded-lg hover:bg-gray-50">📋 Copy</button>
+            <button onclick="editCard('${s.id}')" class="text-xs px-3 py-1 border border-gray-200 rounded-lg hover:bg-gray-50">✏️ Edit</button>
+            <button onclick="regenerateOne('${s.id}')" class="text-xs px-3 py-1 border border-gray-200 rounded-lg hover:bg-gray-50">🔄 Regenerate</button>
+          </div>
+        </div>
+        <div id="view_${s.id}" class="space-y-3">
+          <div>
+            <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:${s.colour}">Key Learning</p>
+            <ul class="space-y-1">${renderLines(r.keyLearning, s.colour)}</ul>
+          </div>
+          <div class="border-t pt-3">
+            <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:${s.colour}">Growth in Learning</p>
+            <ul class="space-y-1">${renderLines(r.growthInLearning, s.colour)}</ul>
+          </div>
+          <div class="border-t pt-3">
+            <p class="text-xs font-bold uppercase tracking-wide mb-1" style="color:${s.colour}">Next Steps in Learning</p>
+            <ul class="space-y-1">${renderLines(r.nextSteps, s.colour)}</ul>
+          </div>
+        </div>
+        <div id="edit_${s.id}" class="hidden">
+          <textarea id="editText_${s.id}" rows="12" class="w-full border border-gray-200 rounded-lg p-3 text-sm font-mono">${fullText}</textarea>
+          <button onclick="saveEdit('${s.id}')" class="mt-2 btn-primary px-4 py-1.5 rounded-lg text-sm">Save</button>
+          <button onclick="cancelEdit('${s.id}')" class="mt-2 ml-2 px-4 py-1.5 rounded-lg text-sm border border-gray-200">Cancel</button>
+        </div>`;
+    }
+    container.appendChild(card);
+  });
+
+  document.getElementById('resultsSection').classList.remove('hidden');
+  document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ─────────────────────────────────────────────────────────────
+// COPY / EDIT / REGENERATE
+// ─────────────────────────────────────────────────────────────
+function getCardText(id) {
+  const s = STRANDS.find(x => x.id === id);
+  const view = document.getElementById('view_' + id);
+  if (!view) return '';
+  const sections = view.querySelectorAll('.space-y-3 > div');
+  const getLines = (section) => [...(section?.querySelectorAll('li span:last-child') || [])].map(el => el.textContent.trim());
+  const klLines = getLines(sections[0]);
+  const giLines = getLines(sections[1]);
+  const nsLines = getLines(sections[2]);
+  return s.label + '\n\nKEY LEARNING:\n' + klLines.map(l=>'– '+l).join('\n') + '\n\nGROWTH IN LEARNING:\n' + giLines.map(l=>'– '+l).join('\n') + '\n\nNEXT STEPS IN LEARNING:\n' + nsLines.map(l=>'Next Step: '+l).join('\n');
+}
+
+function copyCard(id) {
+  const text = getCardText(id);
+  navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard!'));
+}
+function editCard(id) {
+  document.getElementById('view_' + id).classList.add('hidden');
+  document.getElementById('edit_' + id).classList.remove('hidden');
+}
+
+function saveEdit(id) {
+  const raw = document.getElementById('editText_' + id).value;
+  const s = STRANDS.find(x => x.id === id);
+  const parseLines = (text) => (text||'').split('\n').map(l=>l.trim()).filter(l=>l.startsWith('–')||l.startsWith('-')||l.startsWith('Next Step:'));
+  const keyMatch = raw.match(/KEY LEARNING:\s*([\s\S]*?)(?=GROWTH IN LEARNING:|$)/);
+  const growthMatch = raw.match(/GROWTH IN LEARNING:\s*([\s\S]*?)(?=NEXT STEPS IN LEARNING:|$)/);
+  const nextMatch = raw.match(/NEXT STEPS IN LEARNING:\s*([\s\S]*?)$/);
+  const klLines = parseLines(keyMatch ? keyMatch[1] : '');
+  const giLines = parseLines(growthMatch ? growthMatch[1] : '');
+  const nsLines = parseLines(nextMatch ? nextMatch[1] : '');
+  const renderLines = (lines, colour) => lines.length
+    ? lines.map(l => '<li class="flex gap-2 text-sm text-gray-700"><span style="color:'+colour+'" class="font-bold flex-shrink-0">'+(l.startsWith('Next Step:')? '→':'–')+'</span><span>'+l.replace(/^–\s*|^-\s*|^Next Step:\s*/,'')+'</span></li>').join('')
+    : '<li class="text-sm text-gray-400 italic">No content</li>';
+  const view = document.getElementById('view_' + id);
+  const sections = view.querySelectorAll('.space-y-3 > div');
+  if (sections[0]) sections[0].querySelector('ul').innerHTML = renderLines(klLines, s.colour);
+  if (sections[1]) sections[1].querySelector('ul').innerHTML = renderLines(giLines, s.colour);
+  if (sections[2]) sections[2].querySelector('ul').innerHTML = renderLines(nsLines, s.colour);
+  document.getElementById('edit_' + id).classList.add('hidden');
+  view.classList.remove('hidden');
+  showToast('Edits saved!');
+}
+
+function cancelEdit(id) {
+  document.getElementById('edit_' + id).classList.add('hidden');
+  document.getElementById('view_' + id).classList.remove('hidden');
+}
+
+async function regenerateOne(id) {
+  if (!apiKey) { showToast('⚠️ Please enter your API key first'); return; }
+  const s = STRANDS.find(x => x.id === id);
+  const card = document.getElementById('result_' + id);
+
+  const origContent = card.innerHTML;
+  card.innerHTML = `<div class="skeleton h-32 rounded-lg"></div>`;
+
+  try {
+    const prompt = buildPrompt(s);
+    const raw = await callAPI(prompt);
+    const parsed = parseComment(raw, s);
+    const resultsMap = { [id]: { ...s, ...parsed, error: null } };
+    renderResults(resultsMap, [s]);
+    // Re-render just this card
+    const newCard = document.getElementById('result_' + id);
+    card.innerHTML = newCard.innerHTML;
+  } catch (e) {
+    card.innerHTML = `
+      <div class="flex items-center gap-2 mb-2">
+        <span class="inline-flex items-center justify-center w-8 h-8 rounded-full text-white font-bold text-sm" style="background:${s.colour}">${s.letter}</span>
+        <h3 class="font-bold text-gray-800">${s.label}</h3>
+      </div>
+      <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+        ⚠️ Error: ${e.message}
+        <button onclick="regenerateOne('${s.id}')" class="ml-3 underline">Retry</button>
+      </div>`;
+  }
+}
+
+function copyAll() {
+  const parts = [];
+  STRANDS.forEach(s => {
+    const view = document.getElementById('view_' + s.id);
+    if (!view || view.classList.contains('hidden')) return;
+    const text = getCardText(s.id);
+    if (text) parts.push(text);
+  });
+  if (!parts.length) { showToast('No comments to copy'); return; }
+  navigator.clipboard.writeText(parts.join('\n\n' + '─'.repeat(50) + '\n\n')).then(() => showToast('All comments copied!'));
+}
+
+// ─────────────────────────────────────────────────────────────
+// UTILITIES
+// ─────────────────────────────────────────────────────────────
+function setProgress(pct, label) {
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('progressLabel').textContent = label;
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.opacity = '1';
+  setTimeout(() => t.style.opacity = '0', 2500);
+}
+
+// ─────────────────────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────────────────────
+renderStrands();
+</script>
+</body>
+</html>
